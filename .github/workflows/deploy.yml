@@ -1,55 +1,114 @@
 name: CI/CD Pipeline
-
+ 
 on:
   push:
     branches:
-      - main
-
+      - main   # change branch if needed
+ 
 jobs:
   build:
+    name: Build Stage
     runs-on: ubuntu-latest
+ 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Build backend image
-        run: docker build -t backend:test ./backend
-
-      - name: Build frontend image
-        run: docker build -t frontend:test ./frontend
-
+        uses: actions/checkout@v4
+ 
+      # Backend build
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+ 
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+ 
+      - name: Run backend tests (if any)
+        working-directory: ./backend
+        run: |
+          echo "Run tests here if you have pytest/unittest"
+ 
+      # Frontend build
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+ 
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm install
+ 
+      - name: Build frontend
+        working-directory: ./frontend
+        run: npm run build
+ 
+      - name: Archive production artifacts
+        run: |
+          tar -czf build-artifacts.tar.gz backend frontend docker-compose.yml
+ 
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: build-artifacts.tar.gz
+ 
   deploy:
+    name: Deploy Stage
     runs-on: ubuntu-latest
     needs: build
+ 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Setup SSH
-        uses: webfactory/ssh-agent@v0.7.0
+      - name: Download artifact
+        uses: actions/download-artifact@v4
         with:
-          ssh-private-key: ${{ secrets.EC2_KEY }}
-
-      - name: Deploy to EC2
-        run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
-            set -e
-
-            # Ensure Docker is installed
-            if ! command -v docker &> /dev/null; then
-              sudo apt-get update -y
-              sudo apt-get install -y docker.io
-            fi
-
-            # Prepare app directory
-            mkdir -p ~/app
-            cd ~/app
-
-            # Clone repo if not already present
-            if [ ! -d ".git" ]; then
-              git clone https://github.com/${{ github.repository }} .
-            fi
-
-            echo "✅ Code updated on EC2"
-            echo "⚠️ Skipping docker compose due to YAML error"
-          EOF
+          name: build-artifacts
+          path: .
+ 
+      - name: Extract artifact
+        run: tar -xzf build-artifacts.tar.gz
+ 
+      - name: List extracted files (debug)
+        run: ls -R .
+ 
+      - name: Clean old files on EC2 with sudo
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.AWS_HOST }}
+          username: ${{ secrets.AWS_USER }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          script: |
+            cd /home/${{ secrets.AWS_USER }}/app
+            sudo rm -rf backend frontend docker-compose.yml
+ 
+      - name: Copy files to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.AWS_HOST }}
+          username: ${{ secrets.AWS_USER }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          source: "./backend/*,./frontend/*,./docker-compose.yml"
+          target: "/home/${{ secrets.AWS_USER }}/app"
+ 
+      - name: Fix permissions on EC2 (optional but recommended)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.AWS_HOST }}
+          username: ${{ secrets.AWS_USER }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          script: |
+            cd /home/${{ secrets.AWS_USER }}/app
+            sudo chown -R $USER:$USER .
+ 
+      - name: Restart containers with sudo
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.AWS_HOST }}
+          username: ${{ secrets.AWS_USER }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          script: |
+            cd /home/${{ secrets.AWS_USER }}/app
+            sudo docker-compose down
+            sudo docker-compose up -d --build
