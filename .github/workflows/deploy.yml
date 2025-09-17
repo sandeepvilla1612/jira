@@ -1,98 +1,85 @@
 name: CI/CD Pipeline
- 
+
 on:
   push:
     branches:
       - main   # change branch if needed
- 
+
 jobs:
   build:
     name: Build Stage
     runs-on: ubuntu-latest
- 
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
- 
+
       # Backend build
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
- 
+
       - name: Install backend dependencies
         working-directory: ./backend
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
- 
+
       - name: Run backend tests (if any)
         working-directory: ./backend
         run: |
           echo "Run tests here if you have pytest/unittest"
- 
+
       # Frontend build
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
- 
+
       - name: Install frontend dependencies
         working-directory: ./frontend
         run: npm install
- 
+
       - name: Build frontend
         working-directory: ./frontend
         run: npm run build
- 
+
       - name: Archive production artifacts
         run: |
           tar -czf build-artifacts.tar.gz backend frontend docker-compose.yml
- 
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: build-artifacts
           path: build-artifacts.tar.gz
- 
+
   deploy:
     name: Deploy Stage
     runs-on: ubuntu-latest
     needs: build
- 
+
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v4
         with:
           name: build-artifacts
           path: .
- 
+
       - name: Extract artifact
         run: tar -xzf build-artifacts.tar.gz
- 
-      - name: List extracted files (debug)
-        run: ls -R .
- 
-      - name: Clean old files on EC2 with sudo
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.AWS_HOST }}
-          username: ${{ secrets.AWS_USER }}
-          key: ${{ secrets.AWS_SSH_KEY }}
-          script: |
-            cd /home/${{ secrets.AWS_USER }}/app
-            sudo rm -rf backend frontend docker-compose.yml
- 
+
       - name: Copy files to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.AWS_HOST }}
           username: ${{ secrets.AWS_USER }}
           key: ${{ secrets.AWS_SSH_KEY }}
-          source: "./backend/*,./frontend/*,./docker-compose.yml"
+          source: "backend frontend docker-compose.yml"
           target: "/home/${{ secrets.AWS_USER }}/app"
- 
-      - name: Fix permissions on EC2 (optional but recommended)
+
+      - name: Fix permissions on EC2 (optional)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.AWS_HOST }}
@@ -101,8 +88,8 @@ jobs:
           script: |
             cd /home/${{ secrets.AWS_USER }}/app
             sudo chown -R $USER:$USER .
- 
-      - name: Restart containers with sudo
+
+      - name: Restart containers
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.AWS_HOST }}
@@ -110,5 +97,5 @@ jobs:
           key: ${{ secrets.AWS_SSH_KEY }}
           script: |
             cd /home/${{ secrets.AWS_USER }}/app
-            sudo docker-compose down
-            sudo docker-compose up -d --build
+            docker compose down || true
+            docker compose up -d --build
