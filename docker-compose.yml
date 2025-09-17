@@ -1,17 +1,18 @@
-version: '3.8'
-services:
-  backend:
-    build: ./backend
-    ports:
-      - '8000:8000'
-    environment:
-      - DATABASE_URL=sqlite:///./dev.db
-    volumes:
-      - ./backend:/app
-  frontend:
-    build: ./frontend
-    ports:
-      - '5173:5173'
-    command: npm run dev
-    volumes:
-      - ./frontend:/app
+- name: Deploy to EC2
+  run: |
+    ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+      mkdir -p ~/app
+      cd ~/app
+
+      # Pull latest code
+      if [ ! -d ".git" ]; then
+        git clone https://github.com/${{ github.repository }} . 
+      else
+        git reset --hard
+        git pull origin main
+      fi
+
+      # Build & run containers
+      docker compose down || true
+      docker compose up -d --build
+    EOF
