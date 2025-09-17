@@ -3,7 +3,7 @@ name: CI/CD Pipeline
 on:
   push:
     branches:
-      - main  # Change branch if needed
+      - main
 
 jobs:
   build:
@@ -28,8 +28,7 @@ jobs:
 
       - name: Run backend tests (if any)
         working-directory: ./backend
-        run: |
-          echo "Run tests here if you have pytest/unittest"
+        run: echo "Run tests here if you have pytest/unittest"
 
       # Frontend build
       - name: Set up Node.js
@@ -46,8 +45,7 @@ jobs:
         run: npm run build
 
       - name: Archive production artifacts
-        run: |
-          tar -czf build-artifacts.tar.gz backend frontend docker-compose.yml
+        run: tar -czf build-artifacts.tar.gz backend frontend docker-compose.yml
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -65,44 +63,3 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-artifacts
-          path: .
-
-      - name: Extract artifact
-        run: tar -xzf build-artifacts.tar.gz -C .
-
-      - name: Debug: list extracted files
-        run: ls -R .
-
-      - name: Copy files to EC2
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.AWS_HOST }}
-          username: ${{ secrets.AWS_USER }}
-          key: ${{ secrets.AWS_SSH_KEY }}
-          source: |
-            ./backend/
-            ./frontend/
-            ./docker-compose.yml
-          target: "/home/${{ secrets.AWS_USER }}/app"
-
-      - name: Fix permissions on EC2 (optional)
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.AWS_HOST }}
-          username: ${{ secrets.AWS_USER }}
-          key: ${{ secrets.AWS_SSH_KEY }}
-          script: |
-            cd /home/${{ secrets.AWS_USER }}/app
-            sudo chown -R $USER:$USER .
-
-      - name: Restart containers
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.AWS_HOST }}
-          username: ${{ secrets.AWS_USER }}
-          key: ${{ secrets.AWS_SSH_KEY }}
-          script: |
-            cd /home/${{ secrets.AWS_USER }}/app
-            docker compose down || true
-            docker compose up -d --build
-
