@@ -93,3 +93,15 @@ jobs:
           key: ${{ secrets.AWS_SSH_KEY }}
           script: |
             cd /home/${{ secrets.AWS_USER }}/app
+            sudo chown -R $USER:$USER .
+
+      - name: Restart containers
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.AWS_HOST }}
+          username: ${{ secrets.AWS_USER }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          script: |
+            cd /home/${{ secrets.AWS_USER }}/app
+            docker compose down || true
+            docker compose up -d --build
