@@ -105,3 +105,4 @@ jobs:
             cd /home/${{ secrets.AWS_USER }}/app
             docker compose down || true
             docker compose up -d --build
+
